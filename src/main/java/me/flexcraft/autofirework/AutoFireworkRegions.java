@@ -1,81 +1,102 @@
 package me.flexcraft.autofirework;
 
+import com.sk89q.worldedit.bukkit.BukkitAdapter;
+import com.sk89q.worldguard.WorldGuard;
+import com.sk89q.worldguard.protection.managers.RegionManager;
+import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import org.bukkit.*;
-import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Firework;
 import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.scheduler.BukkitRunnable;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class AutoFireworkRegions extends JavaPlugin {
-
-    private final Random random = new Random();
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        startFireworksTask();
-        getLogger().info("AutoFireworkRegions enabled");
+        startTask();
     }
 
-    private void startFireworksTask() {
-        FileConfiguration cfg = getConfig();
+    private void startTask() {
+        int interval = getConfig().getInt("interval-seconds", 10) * 20;
 
-        int interval = cfg.getInt("interval-seconds", 10);
-        List<String> regions = cfg.getStringList("regions");
-        int power = cfg.getInt("firework.power", 2);
-        List<String> colorNames = cfg.getStringList("firework.colors");
+        Bukkit.getScheduler().runTaskTimer(this, () -> {
+            for (World world : Bukkit.getWorlds()) {
+                spawnInWorld(world);
+            }
+        }, 40L, interval);
+    }
 
-        List<Color> colors = new ArrayList<>();
-        for (String name : colorNames) {
-            try {
-                colors.add(DyeColor.valueOf(name.toUpperCase()).getColor());
-            } catch (IllegalArgumentException ex) {
-                getLogger().warning("Invalid color in config: " + name);
+    private void spawnInWorld(World world) {
+        RegionManager rm = WorldGuard.getInstance()
+                .getPlatform()
+                .getRegionContainer()
+                .get(BukkitAdapter.adapt(world));
+
+        if (rm == null) return;
+
+        for (String regionName : getConfig().getStringList("regions")) {
+            ProtectedRegion region = rm.getRegion(regionName);
+            if (region == null) continue;
+
+            Location loc = randomLocationInRegion(world, region);
+            if (loc != null) {
+                spawnFirework(loc);
             }
         }
+    }
 
-        if (colors.isEmpty()) {
-            colors.add(Color.WHITE);
-        }
+    private Location randomLocationInRegion(World world, ProtectedRegion region) {
+        int minX = region.getMinimumPoint().getBlockX();
+        int minY = region.getMinimumPoint().getBlockY();
+        int minZ = region.getMinimumPoint().getBlockZ();
 
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                for (World world : Bukkit.getWorlds()) {
-                    for (String regionName : regions) {
-                        spawnFireworkInRegion(world, regionName, colors, power);
-                    }
+        int maxX = region.getMaximumPoint().getBlockX();
+        int maxY = region.getMaximumPoint().getBlockY();
+        int maxZ = region.getMaximumPoint().getBlockZ();
+
+        for (int i = 0; i < 15; i++) { // 15 попыток найти точку
+            int x = ThreadLocalRandom.current().nextInt(minX, maxX + 1);
+            int y = ThreadLocalRandom.current().nextInt(minY, maxY + 1);
+            int z = ThreadLocalRandom.current().nextInt(minZ, maxZ + 1);
+
+            if (region.contains(x, y, z)) {
+                Location loc = new Location(world, x + 0.5, y + 0.5, z + 0.5);
+                if (loc.getBlock().getType().isAir()) {
+                    return loc;
                 }
             }
-        }.runTaskTimer(this, 20L, interval * 20L);
+        }
+        return null;
     }
 
-    private void spawnFireworkInRegion(World world, String regionName, List<Color> colors, int power) {
-        // ⚠ Пока заглушка — дальше можно подключить WorldGuard
-        Location loc = world.getSpawnLocation().clone().add(
-                random.nextInt(10) - 5,
-                random.nextInt(5) + 2,
-                random.nextInt(10) - 5
-        );
-
-        Firework fw = world.spawn(loc, Firework.class);
+    private void spawnFirework(Location loc) {
+        Firework fw = loc.getWorld().spawn(loc, Firework.class);
         FireworkMeta meta = fw.getFireworkMeta();
 
+        List<Color> available = new ArrayList<>();
+        for (String c : getConfig().getStringList("firework.colors")) {
+            try {
+                available.add(Color.fromRGB(Color.valueOf(c).asRGB()));
+            } catch (Exception ignored) {}
+        }
+
+        Collections.shuffle(available);
+
         FireworkEffect effect = FireworkEffect.builder()
-                .with(FireworkEffect.Type.BALL_LARGE)
-                .withColor(colors.get(random.nextInt(colors.size())))
-                .withFade(Color.WHITE)
-                .flicker(true)
-                .trail(true)
+                .with(FireworkEffect.Type.values()[ThreadLocalRandom.current().nextInt(FireworkEffect.Type.values().length)])
+                .withColor(available.subList(0, Math.min(2, available.size())))
+                .withFade(available.get(ThreadLocalRandom.current().nextInt(available.size())))
+                .flicker(ThreadLocalRandom.current().nextBoolean())
+                .trail(ThreadLocalRandom.current().nextBoolean())
                 .build();
 
+        meta.clearEffects();
         meta.addEffect(effect);
-        meta.setPower(power);
+        meta.setPower(getConfig().getInt("firework.power", 2));
         fw.setFireworkMeta(meta);
     }
 }
