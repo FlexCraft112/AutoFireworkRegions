@@ -40,6 +40,7 @@ public class AutoFireworkRegions extends JavaPlugin {
         if (regionNames.isEmpty()) return;
 
         for (World world : Bukkit.getWorlds()) {
+
             RegionManager manager = WorldGuard.getInstance()
                     .getPlatform()
                     .getRegionContainer()
@@ -114,13 +115,13 @@ public class AutoFireworkRegions extends JavaPlugin {
     }
 
     private List<Color> loadColors() {
-        List<Color> list = new ArrayList<String>();
-        List<Color> result = new ArrayList<Color>();
 
+        List<Color> result = new ArrayList<Color>();
         List<String> cfg = config.getStringList("firework.colors");
 
         for (String s : cfg) {
             s = s.toUpperCase();
+
             if (s.equals("RED")) result.add(Color.fromRGB(255, 60, 60));
             else if (s.equals("BLUE")) result.add(Color.fromRGB(60, 60, 255));
             else if (s.equals("GREEN")) result.add(Color.fromRGB(60, 255, 60));
