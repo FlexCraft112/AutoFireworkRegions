@@ -1,21 +1,16 @@
 package me.flexcraft.autofirework;
 
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
-import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldguard.WorldGuard;
 import com.sk89q.worldguard.protection.ApplicableRegionSet;
 import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import org.bukkit.*;
-import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Firework;
 import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.*;
 
 public class AutoFireworkRegions extends JavaPlugin {
 
@@ -25,92 +20,130 @@ public class AutoFireworkRegions extends JavaPlugin {
     public void onEnable() {
         saveDefaultConfig();
         startTask();
+        getLogger().info("AutoFireworkRegions enabled");
     }
 
     private void startTask() {
-        FileConfiguration cfg = getConfig();
-        int interval = cfg.getInt("interval-seconds", 10);
+        int interval = getConfig().getInt("interval-seconds", 10);
 
         Bukkit.getScheduler().runTaskTimer(this, () -> {
-            for (String regionName : cfg.getStringList("regions")) {
-                spawnInRegion(regionName);
+            for (String regionName : getConfig().getStringList("regions")) {
+                spawnFireworkInRegion(regionName);
             }
         }, 20L, interval * 20L);
     }
 
-    private void spawnInRegion(String regionName) {
+    private void spawnFireworkInRegion(String regionName) {
         for (World world : Bukkit.getWorlds()) {
 
-            RegionManager manager = WorldGuard.getInstance()
+            RegionManager rm = WorldGuard.getInstance()
                     .getPlatform()
                     .getRegionContainer()
                     .get(BukkitAdapter.adapt(world));
 
-            if (manager == null) continue;
+            if (rm == null) continue;
 
-            ProtectedRegion region = manager.getRegion(regionName);
+            ProtectedRegion region = rm.getRegion(regionName);
             if (region == null) continue;
 
-            Location loc = randomLocationInRegion(world, region, manager);
-            if (loc == null) continue;
+            Location loc = randomLocationInRegion(world, region);
+            if (loc == null) return;
 
-            spawnFirework(loc);
+            Firework fw = world.spawn(loc, Firework.class);
+            FireworkMeta meta = fw.getFireworkMeta();
+
+            meta.setPower(getConfig().getInt("firework.power", 2));
+            meta.addEffect(buildEffect());
+
+            fw.setFireworkMeta(meta);
+            return;
         }
     }
 
-    private Location randomLocationInRegion(World world, ProtectedRegion region, RegionManager manager) {
-
+    private Location randomLocationInRegion(World world, ProtectedRegion region) {
         int minX = region.getMinimumPoint().getBlockX();
+        int minY = region.getMinimumPoint().getBlockY();
         int minZ = region.getMinimumPoint().getBlockZ();
+
         int maxX = region.getMaximumPoint().getBlockX();
+        int maxY = region.getMaximumPoint().getBlockY();
         int maxZ = region.getMaximumPoint().getBlockZ();
 
-        for (int i = 0; i < 25; i++) { // максимум 25 попыток
+        for (int i = 0; i < 20; i++) {
+            int x = rand(minX, maxX);
+            int y = rand(minY, maxY);
+            int z = rand(minZ, maxZ);
 
-            int x = ThreadLocalRandom.current().nextInt(minX, maxX + 1);
-            int z = ThreadLocalRandom.current().nextInt(minZ, maxZ + 1);
-            int y = world.getHighestBlockYAt(x, z) + 1;
+            Location loc = new Location(world, x + 0.5, y + 0.5, z + 0.5);
 
-            BlockVector3 vec = BlockVector3.at(x, y, z);
-            ApplicableRegionSet set = manager.getApplicableRegions(vec);
+            ApplicableRegionSet set = WorldGuard.getInstance()
+                    .getPlatform()
+                    .getRegionContainer()
+                    .createQuery()
+                    .getApplicableRegions(BukkitAdapter.adapt(loc));
 
-            if (set.getRegions().contains(region)) {
-                return new Location(world, x + 0.5, y + 0.5, z + 0.5);
+            for (ProtectedRegion r : set) {
+                if (r.getId().equalsIgnoreCase(region.getId())) {
+                    return loc;
+                }
             }
         }
-
         return null;
     }
 
-    private void spawnFirework(Location loc) {
-
-        Firework fw = loc.getWorld().spawn(loc, Firework.class);
-        FireworkMeta meta = fw.getFireworkMeta();
-
+    private FireworkEffect buildEffect() {
+        List<String> cfgColors = getConfig().getStringList("firework.colors");
         List<Color> colors = new ArrayList<>();
-        for (String s : getConfig().getStringList("firework.colors")) {
-            try {
-                colors.add(Color.fromRGB(Color.valueOf(s).asRGB()));
-            } catch (Exception ignored) {}
+
+        for (String s : cfgColors) {
+            Color c = parseColor(s);
+            if (c != null) colors.add(c);
         }
 
         if (colors.isEmpty()) {
             colors.add(Color.RED);
-            colors.add(Color.AQUA);
-            colors.add(Color.PURPLE);
             colors.add(Color.BLUE);
         }
 
-        FireworkEffect effect = FireworkEffect.builder()
-                .flicker(true)
-                .trail(true)
+        Collections.shuffle(colors);
+
+        return FireworkEffect.builder()
                 .with(FireworkEffect.Type.values()[random.nextInt(FireworkEffect.Type.values().length)])
                 .withColor(colors)
-                .withFade(colors)
+                .withFade(Color.WHITE)
+                .flicker(random.nextBoolean())
+                .trail(random.nextBoolean())
                 .build();
+    }
 
-        meta.addEffect(effect);
-        meta.setPower(getConfig().getInt("firework.power", 2));
-        fw.setFireworkMeta(meta);
+    private Color parseColor(String name) {
+        try {
+            switch (name.toUpperCase()) {
+                case "RED": return Color.RED;
+                case "BLUE": return Color.BLUE;
+                case "GREEN": return Color.GREEN;
+                case "AQUA": return Color.AQUA;
+                case "PURPLE": return Color.PURPLE;
+                case "YELLOW": return Color.YELLOW;
+                case "ORANGE": return Color.ORANGE;
+                case "WHITE": return Color.WHITE;
+                case "BLACK": return Color.BLACK;
+                case "FUCHSIA": return Color.FUCHSIA;
+                case "LIME": return Color.LIME;
+                case "NAVY": return Color.NAVY;
+                case "MAROON": return Color.MAROON;
+                case "TEAL": return Color.TEAL;
+                case "SILVER": return Color.SILVER;
+                case "GRAY": return Color.GRAY;
+                default: return null;
+            }
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private int rand(int min, int max) {
+        if (max <= min) return min;
+        return random.nextInt(max - min + 1) + min;
     }
 }
