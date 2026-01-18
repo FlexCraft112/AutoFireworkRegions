@@ -1,0 +1,5 @@
+name: AutoFireworkRegions
+version: 1.0
+main: me.flexcraft.autofirework.AutoFireworkRegions
+api-version: 1.20
+depend: [WorldGuard]
