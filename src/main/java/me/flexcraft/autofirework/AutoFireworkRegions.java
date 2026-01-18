@@ -25,7 +25,13 @@ public class AutoFireworkRegions extends JavaPlugin {
 
         int interval = config.getInt("interval-seconds", 10);
 
-        Bukkit.getScheduler().runTaskTimer(this, this::spawnFireworks, 40L, interval * 20L);
+        Bukkit.getScheduler().runTaskTimer(this, new Runnable() {
+            @Override
+            public void run() {
+                spawnFireworks();
+            }
+        }, 40L, interval * 20L);
+
         getLogger().info("AutoFireworkRegions enabled");
     }
 
@@ -65,7 +71,6 @@ public class AutoFireworkRegions extends JavaPlugin {
 
         Location loc = new Location(world, x + 0.5, y + 0.5, z + 0.5);
 
-        // дополнительная проверка — строго внутри региона
         ApplicableRegionSet set = WorldGuard.getInstance()
                 .getPlatform()
                 .getRegionContainer()
@@ -80,27 +85,27 @@ public class AutoFireworkRegions extends JavaPlugin {
     }
 
     private void spawnFirework(Location loc) {
-        Firework firework = loc.getWorld().spawn(loc, Firework.class);
-        FireworkMeta meta = firework.getFireworkMeta();
+        Firework fw = loc.getWorld().spawn(loc, Firework.class);
+        FireworkMeta meta = fw.getFireworkMeta();
 
         meta.setPower(config.getInt("firework.power", 2));
 
-        List<Color> availableColors = loadColors();
-        Collections.shuffle(availableColors);
+        List<Color> colors = loadColors();
+        Collections.shuffle(colors);
 
-        int colorCount = ThreadLocalRandom.current().nextInt(1, 4);
+        int count = ThreadLocalRandom.current().nextInt(1, 4);
 
         FireworkEffect.Builder effect = FireworkEffect.builder()
                 .flicker(true)
                 .trail(true)
                 .with(randomEffectType());
 
-        for (int i = 0; i < Math.min(colorCount, availableColors.size()); i++) {
-            effect.withColor(availableColors.get(i));
+        for (int i = 0; i < count && i < colors.size(); i++) {
+            effect.withColor(colors.get(i));
         }
 
         meta.addEffect(effect.build());
-        firework.setFireworkMeta(meta);
+        fw.setFireworkMeta(meta);
     }
 
     private FireworkEffect.Type randomEffectType() {
@@ -109,25 +114,27 @@ public class AutoFireworkRegions extends JavaPlugin {
     }
 
     private List<Color> loadColors() {
-        List<Color> colors = new ArrayList<>();
+        List<Color> list = new ArrayList<String>();
+        List<Color> result = new ArrayList<Color>();
 
-        for (String s : config.getStringList("firework.colors")) {
-            switch (s.toUpperCase()) {
-                case "RED" -> colors.add(Color.fromRGB(255, 60, 60));
-                case "BLUE" -> colors.add(Color.fromRGB(60, 60, 255));
-                case "GREEN" -> colors.add(Color.fromRGB(60, 255, 60));
-                case "AQUA" -> colors.add(Color.fromRGB(60, 255, 255));
-                case "PURPLE" -> colors.add(Color.fromRGB(180, 60, 255));
-                case "YELLOW" -> colors.add(Color.fromRGB(255, 255, 60));
-                case "ORANGE" -> colors.add(Color.fromRGB(255, 140, 40));
-                case "PINK" -> colors.add(Color.fromRGB(255, 120, 200));
-            }
+        List<String> cfg = config.getStringList("firework.colors");
+
+        for (String s : cfg) {
+            s = s.toUpperCase();
+            if (s.equals("RED")) result.add(Color.fromRGB(255, 60, 60));
+            else if (s.equals("BLUE")) result.add(Color.fromRGB(60, 60, 255));
+            else if (s.equals("GREEN")) result.add(Color.fromRGB(60, 255, 60));
+            else if (s.equals("AQUA")) result.add(Color.fromRGB(60, 255, 255));
+            else if (s.equals("PURPLE")) result.add(Color.fromRGB(180, 60, 255));
+            else if (s.equals("YELLOW")) result.add(Color.fromRGB(255, 255, 60));
+            else if (s.equals("ORANGE")) result.add(Color.fromRGB(255, 140, 40));
+            else if (s.equals("PINK")) result.add(Color.fromRGB(255, 120, 200));
         }
 
-        if (colors.isEmpty()) {
-            colors.add(Color.WHITE);
+        if (result.isEmpty()) {
+            result.add(Color.WHITE);
         }
 
-        return colors;
+        return result;
     }
 }
