@@ -25,12 +25,12 @@ public class AutoFireworkRegions extends JavaPlugin {
 
         Bukkit.getScheduler().runTaskTimer(this, () -> {
             for (World world : Bukkit.getWorlds()) {
-                spawnInWorld(world);
+                handleWorld(world);
             }
         }, 40L, interval);
     }
 
-    private void spawnInWorld(World world) {
+    private void handleWorld(World world) {
         RegionManager rm = WorldGuard.getInstance()
                 .getPlatform()
                 .getRegionContainer()
@@ -43,9 +43,7 @@ public class AutoFireworkRegions extends JavaPlugin {
             if (region == null) continue;
 
             Location loc = randomLocationInRegion(world, region);
-            if (loc != null) {
-                spawnFirework(loc);
-            }
+            if (loc != null) spawnFirework(loc);
         }
     }
 
@@ -58,16 +56,14 @@ public class AutoFireworkRegions extends JavaPlugin {
         int maxY = region.getMaximumPoint().getBlockY();
         int maxZ = region.getMaximumPoint().getBlockZ();
 
-        for (int i = 0; i < 15; i++) { // 15 попыток найти точку
+        for (int i = 0; i < 20; i++) {
             int x = ThreadLocalRandom.current().nextInt(minX, maxX + 1);
             int y = ThreadLocalRandom.current().nextInt(minY, maxY + 1);
             int z = ThreadLocalRandom.current().nextInt(minZ, maxZ + 1);
 
             if (region.contains(x, y, z)) {
                 Location loc = new Location(world, x + 0.5, y + 0.5, z + 0.5);
-                if (loc.getBlock().getType().isAir()) {
-                    return loc;
-                }
+                if (loc.getBlock().getType().isAir()) return loc;
             }
         }
         return null;
@@ -77,21 +73,29 @@ public class AutoFireworkRegions extends JavaPlugin {
         Firework fw = loc.getWorld().spawn(loc, Firework.class);
         FireworkMeta meta = fw.getFireworkMeta();
 
-        List<Color> available = new ArrayList<>();
-        for (String c : getConfig().getStringList("firework.colors")) {
+        List<Color> colors = new ArrayList<>();
+        for (String name : getConfig().getStringList("firework.colors")) {
             try {
-                available.add(Color.fromRGB(Color.valueOf(c).asRGB()));
+                colors.add(DyeColor.valueOf(name).getColor());
             } catch (Exception ignored) {}
         }
 
-        Collections.shuffle(available);
+        if (colors.isEmpty()) {
+            colors.add(Color.RED);
+        }
+
+        Collections.shuffle(colors);
+
+        int count = ThreadLocalRandom.current().nextInt(1, Math.min(3, colors.size()) + 1);
+        List<Color> mainColors = colors.subList(0, count);
+        Color fade = colors.get(ThreadLocalRandom.current().nextInt(colors.size()));
 
         FireworkEffect effect = FireworkEffect.builder()
                 .with(FireworkEffect.Type.values()[ThreadLocalRandom.current().nextInt(FireworkEffect.Type.values().length)])
-                .withColor(available.subList(0, Math.min(2, available.size())))
-                .withFade(available.get(ThreadLocalRandom.current().nextInt(available.size())))
-                .flicker(ThreadLocalRandom.current().nextBoolean())
+                .withColor(mainColors)
+                .withFade(fade)
                 .trail(ThreadLocalRandom.current().nextBoolean())
+                .flicker(ThreadLocalRandom.current().nextBoolean())
                 .build();
 
         meta.clearEffects();
