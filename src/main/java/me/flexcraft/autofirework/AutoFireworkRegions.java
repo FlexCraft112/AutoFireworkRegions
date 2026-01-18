@@ -15,7 +15,7 @@ public class AutoFireworkRegions extends JavaPlugin {
     public void onEnable() {
         saveDefaultConfig();
         startTask();
-        getLogger().info("AutoFireworkRegions enabled (COORDINATES MODE)");
+        getLogger().info("AutoFireworkRegions enabled (POWER MODE)");
     }
 
     private void startTask() {
@@ -54,13 +54,19 @@ public class AutoFireworkRegions extends JavaPlugin {
         Firework fw = world.spawn(loc, Firework.class);
         FireworkMeta meta = fw.getFireworkMeta();
 
-        meta.setPower(getConfig().getInt("firework.power", 2));
-        meta.addEffect(buildEffect());
+        // 🔥 БОЛЬШАЯ МОЩНОСТЬ
+        meta.setPower(Math.max(3, getConfig().getInt("firework.power", 4)));
+
+        // 💥 2–3 ЭФФЕКТА В ОДНОМ ФЕЙЕРВЕРКЕ
+        int effects = 2 + random.nextInt(2);
+        for (int i = 0; i < effects; i++) {
+            meta.addEffect(buildBigEffect());
+        }
 
         fw.setFireworkMeta(meta);
     }
 
-    private FireworkEffect buildEffect() {
+    private FireworkEffect buildBigEffect() {
         List<String> cfgColors = getConfig().getStringList("firework.colors");
         List<Color> colors = new ArrayList<>();
 
@@ -69,19 +75,26 @@ public class AutoFireworkRegions extends JavaPlugin {
             if (c != null) colors.add(c);
         }
 
-        if (colors.isEmpty()) {
+        if (colors.size() < 2) {
             colors.add(Color.RED);
             colors.add(Color.BLUE);
+            colors.add(Color.YELLOW);
         }
 
         Collections.shuffle(colors);
 
+        FireworkEffect.Type[] bigTypes = {
+                FireworkEffect.Type.LARGE_BALL,
+                FireworkEffect.Type.BURST,
+                FireworkEffect.Type.STAR
+        };
+
         return FireworkEffect.builder()
-                .with(FireworkEffect.Type.values()[random.nextInt(FireworkEffect.Type.values().length)])
-                .withColor(colors)
+                .with(bigTypes[random.nextInt(bigTypes.length)])
+                .withColor(colors.subList(0, Math.min(4, colors.size())))
                 .withFade(Color.WHITE)
-                .trail(random.nextBoolean())
-                .flicker(random.nextBoolean())
+                .trail(true)
+                .flicker(true)
                 .build();
     }
 
