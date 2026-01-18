@@ -6,8 +6,17 @@
 
 interval-seconds: 10
 
-regions:
-  - spawn
+zones:
+  spawn:
+    world: world
+    min:
+      x: -692
+      y: 65
+      z: -1187
+    max:
+      x: -522
+      y: 90
+      z: -1057
 
 firework:
   power: 2
@@ -16,3 +25,6 @@ firework:
     - BLUE
     - AQUA
     - PURPLE
+    - LIME
+    - ORANGE
+    - YELLOW
