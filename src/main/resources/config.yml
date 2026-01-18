@@ -1,0 +1,18 @@
+# =====================================================
+# AutoFireWorkRegions
+# Плагин разработан командой проекта FlexCraft - Хэлфи ツ
+# Discord: https://discord.gg/KSdY9z4Fb9
+# =====================================================
+
+interval-seconds: 10
+
+regions:
+  - spawn
+
+firework:
+  power: 2
+  colors:
+    - RED
+    - BLUE
+    - AQUA
+    - PURPLE
