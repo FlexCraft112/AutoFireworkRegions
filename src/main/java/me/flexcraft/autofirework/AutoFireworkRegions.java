@@ -1,9 +1,11 @@
 package me.flexcraft.autofirework;
 
 import org.bukkit.*;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Firework;
 import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.*;
 
@@ -14,114 +16,82 @@ public class AutoFireworkRegions extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        startTask();
-        getLogger().info("AutoFireworkRegions enabled (POWER MODE)");
-    }
 
-    private void startTask() {
         int interval = getConfig().getInt("interval-seconds", 10);
 
-        Bukkit.getScheduler().runTaskTimer(this, () -> {
-            if (!getConfig().isConfigurationSection("zones")) return;
-
-            for (String zone : getConfig().getConfigurationSection("zones").getKeys(false)) {
-                spawnFireworkInZone(zone);
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                spawnFireworks();
             }
-        }, 20L, interval * 20L);
+        }.runTaskTimer(this, 20L, interval * 20L);
     }
 
-    private void spawnFireworkInZone(String zone) {
-        String path = "zones." + zone;
+    private void spawnFireworks() {
+        ConfigurationSection zones = getConfig().getConfigurationSection("zones");
+        if (zones == null) return;
 
-        World world = Bukkit.getWorld(getConfig().getString(path + ".world"));
-        if (world == null) return;
+        for (String zoneName : zones.getKeys(false)) {
+            Location loc = randomLocationInZone(zones.getConfigurationSection(zoneName));
+            if (loc != null) {
+                spawnFirework(loc);
+            }
+        }
+    }
 
-        int minX = getConfig().getInt(path + ".min.x");
-        int minY = getConfig().getInt(path + ".min.y");
-        int minZ = getConfig().getInt(path + ".min.z");
+    private Location randomLocationInZone(ConfigurationSection zone) {
+        if (zone == null) return null;
 
-        int maxX = getConfig().getInt(path + ".max.x");
-        int maxY = getConfig().getInt(path + ".max.y");
-        int maxZ = getConfig().getInt(path + ".max.z");
+        World world = Bukkit.getWorld(zone.getString("world"));
+        if (world == null) return null;
 
-        Location loc = new Location(
-                world,
-                rand(minX, maxX) + 0.5,
-                rand(minY, maxY) + 0.5,
-                rand(minZ, maxZ) + 0.5
-        );
+        int minX = zone.getInt("min.x");
+        int minY = zone.getInt("min.y");
+        int minZ = zone.getInt("min.z");
 
-        Firework fw = world.spawn(loc, Firework.class);
+        int maxX = zone.getInt("max.x");
+        int maxY = zone.getInt("max.y");
+        int maxZ = zone.getInt("max.z");
+
+        int x = random.nextInt(maxX - minX + 1) + minX;
+        int y = random.nextInt(maxY - minY + 1) + minY;
+        int z = random.nextInt(maxZ - minZ + 1) + minZ;
+
+        return new Location(world, x + 0.5, y, z + 0.5);
+    }
+
+    private void spawnFirework(Location loc) {
+        Firework fw = loc.getWorld().spawn(loc, Firework.class);
         FireworkMeta meta = fw.getFireworkMeta();
 
-        // 🔥 БОЛЬШАЯ МОЩНОСТЬ
-        meta.setPower(Math.max(3, getConfig().getInt("firework.power", 4)));
-
-        // 💥 2–3 ЭФФЕКТА В ОДНОМ ФЕЙЕРВЕРКЕ
-        int effects = 2 + random.nextInt(2);
-        for (int i = 0; i < effects; i++) {
-            meta.addEffect(buildBigEffect());
-        }
-
-        fw.setFireworkMeta(meta);
-    }
-
-    private FireworkEffect buildBigEffect() {
-        List<String> cfgColors = getConfig().getStringList("firework.colors");
         List<Color> colors = new ArrayList<>();
-
-        for (String s : cfgColors) {
-            Color c = parseColor(s);
-            if (c != null) colors.add(c);
+        for (String s : getConfig().getStringList("firework.colors")) {
+            try {
+                colors.add((Color) Color.class.getField(s).get(null));
+            } catch (Exception ignored) {}
         }
 
-        if (colors.size() < 2) {
-            colors.add(Color.RED);
-            colors.add(Color.BLUE);
-            colors.add(Color.YELLOW);
-        }
+        if (colors.isEmpty()) colors.add(Color.WHITE);
 
-        Collections.shuffle(colors);
-
-        FireworkEffect.Type[] bigTypes = {
-                FireworkEffect.Type.LARGE_BALL,
+        FireworkEffect.Type[] types = {
+                FireworkEffect.Type.BALL,
+                FireworkEffect.Type.BALL_LARGE,
                 FireworkEffect.Type.BURST,
-                FireworkEffect.Type.STAR
+                FireworkEffect.Type.STAR,
+                FireworkEffect.Type.CREEPER
         };
 
-        return FireworkEffect.builder()
-                .with(bigTypes[random.nextInt(bigTypes.length)])
-                .withColor(colors.subList(0, Math.min(4, colors.size())))
-                .withFade(Color.WHITE)
-                .trail(true)
+        FireworkEffect effect = FireworkEffect.builder()
+                .with(types[random.nextInt(types.length)])
+                .withColor(colors)
+                .withFade(colors)
                 .flicker(true)
+                .trail(true)
                 .build();
-    }
 
-    private Color parseColor(String name) {
-        switch (name.toUpperCase()) {
-            case "RED": return Color.RED;
-            case "BLUE": return Color.BLUE;
-            case "GREEN": return Color.GREEN;
-            case "AQUA": return Color.AQUA;
-            case "PURPLE": return Color.PURPLE;
-            case "YELLOW": return Color.YELLOW;
-            case "ORANGE": return Color.ORANGE;
-            case "WHITE": return Color.WHITE;
-            case "BLACK": return Color.BLACK;
-            case "FUCHSIA": return Color.FUCHSIA;
-            case "LIME": return Color.LIME;
-            case "NAVY": return Color.NAVY;
-            case "MAROON": return Color.MAROON;
-            case "TEAL": return Color.TEAL;
-            case "SILVER": return Color.SILVER;
-            case "GRAY": return Color.GRAY;
-            default: return null;
-        }
-    }
-
-    private int rand(int min, int max) {
-        if (max <= min) return min;
-        return random.nextInt(max - min + 1) + min;
+        meta.clearEffects();
+        meta.addEffect(effect);
+        meta.setPower(getConfig().getInt("firework.power", 4));
+        fw.setFireworkMeta(meta);
     }
 }
