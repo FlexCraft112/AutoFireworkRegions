@@ -2,6 +2,7 @@ package me.flexcraft.autofirework;
 
 import org.bukkit.*;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Firework;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.meta.FireworkMeta;
@@ -23,15 +24,15 @@ public class AutoFireworkRegions extends JavaPlugin {
         new BukkitRunnable() {
             @Override
             public void run() {
-                spawnFireworks();
+                tick();
             }
         }.runTaskTimer(this, 0L, interval * 20L);
     }
 
     // --------------------------------------------------
-    // ОСНОВНАЯ ЛОГИКА (СТАРАЯ, РАБОЧАЯ)
+    // ГЛАВНЫЙ ТИК
     // --------------------------------------------------
-    private void spawnFireworks() {
+    private void tick() {
         ConfigurationSection zones = getConfig().getConfigurationSection("zones");
         if (zones == null) return;
 
@@ -42,31 +43,63 @@ public class AutoFireworkRegions extends JavaPlugin {
             World world = Bukkit.getWorld(zone.getString("world"));
             if (world == null) continue;
 
-            // ❗ КЛЮЧЕВОЙ ФИКС — ЕСЛИ НЕТ ИГРОКОВ, НЕ СПАВНИМ
-            if (!hasPlayerInZone(world, zone)) {
+            boolean hasPlayers = hasPlayerInZone(world, zone);
+
+            if (!hasPlayers) {
+                // 🔥 КЛЮЧЕВОЙ ФИКС — ЧИСТИМ, НО НЕ МЕШАЕМ СПАВНУ
+                clearFireworksInZone(world, zone);
                 continue;
             }
 
-            int locations = getConfig().getInt("firework.locations-per-interval", 1);
-            int minBurst = getConfig().getInt("firework.burst-min", 5);
-            int maxBurst = getConfig().getInt("firework.burst-max", 10);
+            // 🔥 СТАРАЯ РАБОЧАЯ ЛОГИКА СПАВНА
+            spawnFireworks(world, zone);
+        }
+    }
 
-            for (int i = 0; i < locations; i++) {
-                Location loc = randomLocationInZone(world, zone);
+    // --------------------------------------------------
+    // СПАВН ФЕЙЕРВЕРКОВ (СТАРАЯ ЛОГИКА)
+    // --------------------------------------------------
+    private void spawnFireworks(World world, ConfigurationSection zone) {
+        int locations = getConfig().getInt("firework.locations-per-interval", 1);
+        int minBurst = getConfig().getInt("firework.burst-min", 5);
+        int maxBurst = getConfig().getInt("firework.burst-max", 10);
 
-                int burst = (minBurst == maxBurst)
-                        ? minBurst
-                        : random.nextInt(maxBurst - minBurst + 1) + minBurst;
+        for (int i = 0; i < locations; i++) {
+            Location loc = randomLocationInZone(world, zone);
 
-                for (int f = 0; f < burst; f++) {
-                    spawnFirework(loc);
-                }
+            int burst = (minBurst == maxBurst)
+                    ? minBurst
+                    : random.nextInt(maxBurst - minBurst + 1) + minBurst;
+
+            for (int f = 0; f < burst; f++) {
+                spawnFirework(loc);
             }
         }
     }
 
     // --------------------------------------------------
-    // ПРОВЕРКА ИГРОКОВ В ЗОНЕ (ПРОСТО И НАДЁЖНО)
+    // ЧИСТКА ФЕЙЕРВЕРКОВ (ТОЛЬКО ЕСЛИ НЕТ ИГРОКОВ)
+    // --------------------------------------------------
+    private void clearFireworksInZone(World world, ConfigurationSection zone) {
+        int minX = zone.getInt("min.x");
+        int minY = zone.getInt("min.y");
+        int minZ = zone.getInt("min.z");
+        int maxX = zone.getInt("max.x");
+        int maxY = zone.getInt("max.y");
+        int maxZ = zone.getInt("max.z");
+
+        for (Entity e : world.getEntitiesByClass(Firework.class)) {
+            Location l = e.getLocation();
+            if (l.getX() >= minX && l.getX() <= maxX
+                    && l.getY() >= minY && l.getY() <= maxY
+                    && l.getZ() >= minZ && l.getZ() <= maxZ) {
+                e.remove();
+            }
+        }
+    }
+
+    // --------------------------------------------------
+    // ПРОВЕРКА ИГРОКОВ В ЗОНЕ
     // --------------------------------------------------
     private boolean hasPlayerInZone(World world, ConfigurationSection zone) {
         int minX = zone.getInt("min.x");
@@ -88,7 +121,7 @@ public class AutoFireworkRegions extends JavaPlugin {
     }
 
     // --------------------------------------------------
-    // СЛУЧАЙНАЯ ТОЧКА В ЗОНЕ (КАК РАНЬШЕ)
+    // СЛУЧАЙНАЯ ТОЧКА (ОТ ЗЕМЛИ)
     // --------------------------------------------------
     private Location randomLocationInZone(World world, ConfigurationSection zone) {
         int minX = zone.getInt("min.x");
@@ -99,14 +132,12 @@ public class AutoFireworkRegions extends JavaPlugin {
         int x = random.nextInt(maxX - minX + 1) + minX;
         int z = random.nextInt(maxZ - minZ + 1) + minZ;
 
-        int ground = world.getHighestBlockYAt(x, z);
-        int y = ground + 2; // 🔥 как было, от земли
-
-        return new Location(world, x + 0.5, y, z + 0.5);
+        int groundY = world.getHighestBlockYAt(x, z);
+        return new Location(world, x + 0.5, groundY + 2, z + 0.5);
     }
 
     // --------------------------------------------------
-    // СПАВН ФЕЙЕРВЕРКА (БЕЗ ОЧЕРЕДЕЙ)
+    // ФЕЙЕРВЕРК (УСИЛЕННЫЙ)
     // --------------------------------------------------
     private void spawnFirework(Location loc) {
         Firework fw = loc.getWorld().spawn(loc, Firework.class);
@@ -123,10 +154,10 @@ public class AutoFireworkRegions extends JavaPlugin {
             colors.add(Color.RED);
             colors.add(Color.AQUA);
             colors.add(Color.LIME);
+            colors.add(Color.PURPLE);
         }
 
         FireworkEffect.Type[] types = {
-                FireworkEffect.Type.BALL,
                 FireworkEffect.Type.BALL_LARGE,
                 FireworkEffect.Type.BURST,
                 FireworkEffect.Type.STAR,
