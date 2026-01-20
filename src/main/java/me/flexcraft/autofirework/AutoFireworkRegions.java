@@ -1,6 +1,7 @@
 package me.flexcraft.autofirework;
 
 import org.bukkit.*;
+import org.bukkit.block.Block;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Firework;
 import org.bukkit.inventory.meta.FireworkMeta;
@@ -32,32 +33,40 @@ public class AutoFireworkRegions extends JavaPlugin {
         if (zones == null) return;
 
         for (String zoneName : zones.getKeys(false)) {
-            Location loc = randomLocationInZone(zones.getConfigurationSection(zoneName));
+            ConfigurationSection zone = zones.getConfigurationSection(zoneName);
+            if (zone == null) continue;
+
+            Location loc = randomGroundLocation(zone);
             if (loc != null) {
                 spawnFirework(loc);
             }
         }
     }
 
-    private Location randomLocationInZone(ConfigurationSection zone) {
-        if (zone == null) return null;
-
+    /**
+     * ВСЕГДА берём верхний твёрдый блок
+     */
+    private Location randomGroundLocation(ConfigurationSection zone) {
         World world = Bukkit.getWorld(zone.getString("world"));
         if (world == null) return null;
 
         int minX = zone.getInt("min.x");
-        int minY = zone.getInt("min.y");
-        int minZ = zone.getInt("min.z");
-
         int maxX = zone.getInt("max.x");
-        int maxY = zone.getInt("max.y");
+        int minZ = zone.getInt("min.z");
         int maxZ = zone.getInt("max.z");
 
         int x = random.nextInt(maxX - minX + 1) + minX;
-        int y = random.nextInt(maxY - minY + 1) + minY;
         int z = random.nextInt(maxZ - minZ + 1) + minZ;
 
-        return new Location(world, x + 0.5, y, z + 0.5);
+        Block ground = world.getHighestBlockAt(x, z);
+
+        // защита от воздуха и пустых чанков
+        if (ground.getType() == Material.AIR) {
+            return null;
+        }
+
+        // +1 чтобы фейерверк стоял НА земле
+        return ground.getLocation().add(0.5, 1.0, 0.5);
     }
 
     private void spawnFirework(Location loc) {
@@ -71,7 +80,9 @@ public class AutoFireworkRegions extends JavaPlugin {
             } catch (Exception ignored) {}
         }
 
-        if (colors.isEmpty()) colors.add(Color.WHITE);
+        if (colors.isEmpty()) {
+            colors.add(Color.WHITE);
+        }
 
         FireworkEffect.Type[] types = {
                 FireworkEffect.Type.BALL,
@@ -85,13 +96,13 @@ public class AutoFireworkRegions extends JavaPlugin {
                 .with(types[random.nextInt(types.length)])
                 .withColor(colors)
                 .withFade(colors)
-                .flicker(true)
                 .trail(true)
+                .flicker(true)
                 .build();
 
         meta.clearEffects();
         meta.addEffect(effect);
-        meta.setPower(getConfig().getInt("firework.power", 4));
+        meta.setPower(getConfig().getInt("firework.power", 3));
         fw.setFireworkMeta(meta);
     }
 }
