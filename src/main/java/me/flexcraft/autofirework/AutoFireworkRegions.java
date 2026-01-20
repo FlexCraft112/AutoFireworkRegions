@@ -2,9 +2,7 @@ package me.flexcraft.autofirework;
 
 import org.bukkit.*;
 import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.entity.Entity;
 import org.bukkit.entity.Firework;
-import org.bukkit.entity.Player;
 import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -15,24 +13,57 @@ public class AutoFireworkRegions extends JavaPlugin {
 
     private final Random random = new Random();
 
+    // 🔥 МЯГКИЙ ЛИМИТ ФЕЙЕРВЕРКОВ НА ЗОНУ
+    private static final int MAX_FIREWORKS_PER_ZONE = 120;
+
     @Override
     public void onEnable() {
         saveDefaultConfig();
 
-        int interval = Math.max(1, getConfig().getInt("interval-seconds", 1));
+        int interval = getConfig().getInt("interval-seconds", 1);
 
         new BukkitRunnable() {
             @Override
             public void run() {
-                tick();
+                spawnFireworks();
+                cleanupOverflow();
             }
         }.runTaskTimer(this, 0L, interval * 20L);
     }
 
     // --------------------------------------------------
-    // ГЛАВНЫЙ ТИК
+    // СТАРАЯ ЛОГИКА СПАВНА (НЕ ТРОГАЕМ)
     // --------------------------------------------------
-    private void tick() {
+    private void spawnFireworks() {
+        ConfigurationSection zones = getConfig().getConfigurationSection("zones");
+        if (zones == null) return;
+
+        int locations = getConfig().getInt("firework.locations-per-interval", 1);
+        int minBurst = getConfig().getInt("firework.burst-min", 5);
+        int maxBurst = getConfig().getInt("firework.burst-max", 15);
+
+        for (String zoneName : zones.getKeys(false)) {
+            ConfigurationSection zone = zones.getConfigurationSection(zoneName);
+            if (zone == null) continue;
+
+            World world = Bukkit.getWorld(zone.getString("world"));
+            if (world == null) continue;
+
+            for (int i = 0; i < locations; i++) {
+                Location loc = randomLocationInZone(world, zone);
+
+                int burst = random.nextInt(maxBurst - minBurst + 1) + minBurst;
+                for (int b = 0; b < burst; b++) {
+                    spawnFirework(loc);
+                }
+            }
+        }
+    }
+
+    // --------------------------------------------------
+    // МЯГКАЯ ЧИСТКА — БЕЗ УБИЙСТВА ШОУ
+    // --------------------------------------------------
+    private void cleanupOverflow() {
         ConfigurationSection zones = getConfig().getConfigurationSection("zones");
         if (zones == null) return;
 
@@ -43,101 +74,43 @@ public class AutoFireworkRegions extends JavaPlugin {
             World world = Bukkit.getWorld(zone.getString("world"));
             if (world == null) continue;
 
-            boolean hasPlayers = hasPlayerInZone(world, zone);
+            List<Firework> fireworks = new ArrayList<>();
 
-            if (!hasPlayers) {
-                // 🔥 КЛЮЧЕВОЙ ФИКС — ЧИСТИМ, НО НЕ МЕШАЕМ СПАВНУ
-                clearFireworksInZone(world, zone);
-                continue;
+            for (Firework fw : world.getEntitiesByClass(Firework.class)) {
+                Location l = fw.getLocation();
+                if (isInsideZone(l, zone)) {
+                    fireworks.add(fw);
+                }
             }
 
-            // 🔥 СТАРАЯ РАБОЧАЯ ЛОГИКА СПАВНА
-            spawnFireworks(world, zone);
-        }
-    }
+            if (fireworks.size() <= MAX_FIREWORKS_PER_ZONE) continue;
 
-    // --------------------------------------------------
-    // СПАВН ФЕЙЕРВЕРКОВ (СТАРАЯ ЛОГИКА)
-    // --------------------------------------------------
-    private void spawnFireworks(World world, ConfigurationSection zone) {
-        int locations = getConfig().getInt("firework.locations-per-interval", 1);
-        int minBurst = getConfig().getInt("firework.burst-min", 5);
-        int maxBurst = getConfig().getInt("firework.burst-max", 10);
-
-        for (int i = 0; i < locations; i++) {
-            Location loc = randomLocationInZone(world, zone);
-
-            int burst = (minBurst == maxBurst)
-                    ? minBurst
-                    : random.nextInt(maxBurst - minBurst + 1) + minBurst;
-
-            for (int f = 0; f < burst; f++) {
-                spawnFirework(loc);
+            int toRemove = fireworks.size() - MAX_FIREWORKS_PER_ZONE;
+            for (int i = 0; i < toRemove; i++) {
+                fireworks.get(i).remove(); // удаляем САМЫЕ СТАРЫЕ
             }
         }
     }
 
-    // --------------------------------------------------
-    // ЧИСТКА ФЕЙЕРВЕРКОВ (ТОЛЬКО ЕСЛИ НЕТ ИГРОКОВ)
-    // --------------------------------------------------
-    private void clearFireworksInZone(World world, ConfigurationSection zone) {
-        int minX = zone.getInt("min.x");
-        int minY = zone.getInt("min.y");
-        int minZ = zone.getInt("min.z");
-        int maxX = zone.getInt("max.x");
-        int maxY = zone.getInt("max.y");
-        int maxZ = zone.getInt("max.z");
-
-        for (Entity e : world.getEntitiesByClass(Firework.class)) {
-            Location l = e.getLocation();
-            if (l.getX() >= minX && l.getX() <= maxX
-                    && l.getY() >= minY && l.getY() <= maxY
-                    && l.getZ() >= minZ && l.getZ() <= maxZ) {
-                e.remove();
-            }
-        }
+    private boolean isInsideZone(Location l, ConfigurationSection zone) {
+        return l.getX() >= zone.getInt("min.x") && l.getX() <= zone.getInt("max.x")
+            && l.getY() >= zone.getInt("min.y") && l.getY() <= zone.getInt("max.y")
+            && l.getZ() >= zone.getInt("min.z") && l.getZ() <= zone.getInt("max.z");
     }
 
     // --------------------------------------------------
-    // ПРОВЕРКА ИГРОКОВ В ЗОНЕ
-    // --------------------------------------------------
-    private boolean hasPlayerInZone(World world, ConfigurationSection zone) {
-        int minX = zone.getInt("min.x");
-        int minY = zone.getInt("min.y");
-        int minZ = zone.getInt("min.z");
-        int maxX = zone.getInt("max.x");
-        int maxY = zone.getInt("max.y");
-        int maxZ = zone.getInt("max.z");
-
-        for (Player p : world.getPlayers()) {
-            Location l = p.getLocation();
-            if (l.getX() >= minX && l.getX() <= maxX
-                    && l.getY() >= minY && l.getY() <= maxY
-                    && l.getZ() >= minZ && l.getZ() <= maxZ) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    // --------------------------------------------------
-    // СЛУЧАЙНАЯ ТОЧКА (ОТ ЗЕМЛИ)
+    // СЛУЧАЙНАЯ ТОЧКА ОТ ЗЕМЛИ
     // --------------------------------------------------
     private Location randomLocationInZone(World world, ConfigurationSection zone) {
-        int minX = zone.getInt("min.x");
-        int minZ = zone.getInt("min.z");
-        int maxX = zone.getInt("max.x");
-        int maxZ = zone.getInt("max.z");
+        int x = random.nextInt(zone.getInt("max.x") - zone.getInt("min.x") + 1) + zone.getInt("min.x");
+        int z = random.nextInt(zone.getInt("max.z") - zone.getInt("min.z") + 1) + zone.getInt("min.z");
 
-        int x = random.nextInt(maxX - minX + 1) + minX;
-        int z = random.nextInt(maxZ - minZ + 1) + minZ;
-
-        int groundY = world.getHighestBlockYAt(x, z);
-        return new Location(world, x + 0.5, groundY + 2, z + 0.5);
+        int y = world.getHighestBlockYAt(x, z);
+        return new Location(world, x + 0.5, y + 2, z + 0.5);
     }
 
     // --------------------------------------------------
-    // ФЕЙЕРВЕРК (УСИЛЕННЫЙ)
+    // ФЕЙЕРВЕРК (КРАСИВЫЙ)
     // --------------------------------------------------
     private void spawnFirework(Location loc) {
         Firework fw = loc.getWorld().spawn(loc, Firework.class);
@@ -150,19 +123,7 @@ public class AutoFireworkRegions extends JavaPlugin {
             } catch (Exception ignored) {}
         }
 
-        if (colors.isEmpty()) {
-            colors.add(Color.RED);
-            colors.add(Color.AQUA);
-            colors.add(Color.LIME);
-            colors.add(Color.PURPLE);
-        }
-
-        FireworkEffect.Type[] types = {
-                FireworkEffect.Type.BALL_LARGE,
-                FireworkEffect.Type.BURST,
-                FireworkEffect.Type.STAR,
-                FireworkEffect.Type.CREEPER
-        };
+        FireworkEffect.Type[] types = FireworkEffect.Type.values();
 
         FireworkEffect effect = FireworkEffect.builder()
                 .with(types[random.nextInt(types.length)])
