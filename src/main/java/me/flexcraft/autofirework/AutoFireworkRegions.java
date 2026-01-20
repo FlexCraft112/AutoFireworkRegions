@@ -23,42 +23,40 @@ public class AutoFireworkRegions extends JavaPlugin {
         new BukkitRunnable() {
             @Override
             public void run() {
-                tick();
+                fireTick();
             }
-        }.runTaskTimer(this, 20L, interval * 20L);
+        }.runTaskTimer(this, 0L, interval * 20L);
     }
 
     // --------------------------------------------------
-    // MAIN TICK — ЧЁТКО ПО КОНФИГУ
+    // MAIN LOGIC — ЧЁТКО ПО КОНФИГУ
     // --------------------------------------------------
-    private void tick() {
+    private void fireTick() {
         ConfigurationSection zones = getConfig().getConfigurationSection("zones");
         if (zones == null) return;
 
         for (String zoneName : zones.getKeys(false)) {
-            ConfigurationSection zone = zones.getConfigurationSection(zoneName);
-            if (zone == null) continue;
+            ConfigurationSection z = zones.getConfigurationSection(zoneName);
+            if (z == null) continue;
 
-            World world = Bukkit.getWorld(zone.getString("world"));
+            World world = Bukkit.getWorld(z.getString("world"));
             if (world == null) continue;
 
-            if (!hasPlayerInZone(world, zone)) continue;
+            if (!playerInZone(world, z)) continue;
 
             int locations = getConfig().getInt("firework.locations-per-interval", 1);
             int min = getConfig().getInt("firework.burst-min", 5);
             int max = getConfig().getInt("firework.burst-max", 15);
 
             for (int i = 0; i < locations; i++) {
-                Location base = findGround(world, zone);
-                if (base == null) continue;
-
-                int burst = min == max ? min : min + random.nextInt(max - min + 1);
+                Location base = skyLocation(world, z);
+                int burst = min == max ? min : random.nextInt(max - min + 1) + min;
 
                 for (int b = 0; b < burst; b++) {
                     spawnFirework(base.clone().add(
-                            random.nextDouble() * 3 - 1.5,
+                            random.nextDouble() * 6 - 3,
                             0,
-                            random.nextDouble() * 3 - 1.5
+                            random.nextDouble() * 6 - 3
                     ));
                 }
             }
@@ -66,9 +64,9 @@ public class AutoFireworkRegions extends JavaPlugin {
     }
 
     // --------------------------------------------------
-    // PLAYER CHECK
+    // CHECK PLAYER PRESENCE
     // --------------------------------------------------
-    private boolean hasPlayerInZone(World world, ConfigurationSection z) {
+    private boolean playerInZone(World world, ConfigurationSection z) {
         int minX = z.getInt("min.x");
         int minY = z.getInt("min.y");
         int minZ = z.getInt("min.z");
@@ -88,26 +86,24 @@ public class AutoFireworkRegions extends JavaPlugin {
     }
 
     // --------------------------------------------------
-    // SAFE GROUND
+    // SAFE SKY SPAWN (KEY FIX)
     // --------------------------------------------------
-    private Location findGround(World world, ConfigurationSection z) {
+    private Location skyLocation(World world, ConfigurationSection z) {
         int minX = z.getInt("min.x");
         int minZ = z.getInt("min.z");
         int maxX = z.getInt("max.x");
         int maxZ = z.getInt("max.z");
 
-        for (int i = 0; i < 20; i++) {
-            int x = random.nextInt(maxX - minX + 1) + minX;
-            int zed = random.nextInt(maxZ - minZ + 1) + minZ;
-            int y = world.getHighestBlockYAt(x, zed);
+        int x = random.nextInt(maxX - minX + 1) + minX;
+        int zed = random.nextInt(maxZ - minZ + 1) + minZ;
 
-            return new Location(world, x + 0.5, y + 1, zed + 0.5);
-        }
-        return null;
+        int y = world.getHighestBlockYAt(x, zed) + 25 + random.nextInt(15);
+
+        return new Location(world, x + 0.5, y, zed + 0.5);
     }
 
     // --------------------------------------------------
-    // FIREWORK
+    // FIREWORK EFFECT (УЛЬТРА)
     // --------------------------------------------------
     private void spawnFirework(Location loc) {
         Firework fw = loc.getWorld().spawn(loc, Firework.class);
@@ -119,8 +115,8 @@ public class AutoFireworkRegions extends JavaPlugin {
                 colors.add((Color) Color.class.getField(s).get(null));
             } catch (Exception ignored) {}
         }
-        if (colors.size() < 2) {
-            colors = Arrays.asList(Color.RED, Color.AQUA, Color.YELLOW);
+        if (colors.size() < 3) {
+            colors = Arrays.asList(Color.RED, Color.AQUA, Color.LIME, Color.YELLOW);
         }
 
         FireworkEffect.Type[] types = {
@@ -134,8 +130,8 @@ public class AutoFireworkRegions extends JavaPlugin {
                 .with(types[random.nextInt(types.length)])
                 .withColor(colors)
                 .withFade(colors)
-                .flicker(true)
                 .trail(true)
+                .flicker(true)
                 .build();
 
         meta.clearEffects();
