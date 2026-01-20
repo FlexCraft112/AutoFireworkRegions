@@ -1,7 +1,6 @@
 package me.flexcraft.autofirework;
 
 import org.bukkit.*;
-import org.bukkit.block.Block;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Firework;
 import org.bukkit.inventory.meta.FireworkMeta;
@@ -14,52 +13,69 @@ public class AutoFireworkRegions extends JavaPlugin {
 
     private final Random random = new Random();
 
+    // храним активные фейерверки по зонам
+    private final Map<String, List<Firework>> activeFireworks = new HashMap<>();
+
     @Override
     public void onEnable() {
         saveDefaultConfig();
 
-        int interval = getConfig().getInt("interval-seconds", 1);
+        int interval = getConfig().getInt("interval-seconds", 2);
 
         new BukkitRunnable() {
             @Override
             public void run() {
-                spawnFireworks();
+                spawnFireworksSafe();
             }
         }.runTaskTimer(this, 20L, interval * 20L);
     }
 
-    private void spawnFireworks() {
+    private void spawnFireworksSafe() {
         ConfigurationSection zones = getConfig().getConfigurationSection("zones");
         if (zones == null) return;
 
-        int locationsPerInterval = getConfig().getInt("firework.locations-per-interval", 3);
-        int burstMin = getConfig().getInt("firework.burst-min", 5);
-        int burstMax = getConfig().getInt("firework.burst-max", 15);
+        int maxPerZone = getConfig().getInt("max-fireworks-per-zone", 25);
+        int lifeTime = getConfig().getInt("firework-lifetime-seconds", 6) * 20;
 
         for (String zoneName : zones.getKeys(false)) {
-            ConfigurationSection zone = zones.getConfigurationSection(zoneName);
-            if (zone == null) continue;
 
-            for (int i = 0; i < locationsPerInterval; i++) {
-                Location baseLoc = findSafeGroundLocation(zone);
-                if (baseLoc == null) continue;
+            activeFireworks.putIfAbsent(zoneName, new ArrayList<>());
+            List<Firework> list = activeFireworks.get(zoneName);
 
+            // чистим мёртвые
+            list.removeIf(fw -> fw.isDead() || !fw.isValid());
+
+            // если лимит превышен — НЕ СПАВНИМ
+            if (list.size() >= maxPerZone) continue;
+
+            int points = getConfig().getInt("firework.locations-per-interval", 1);
+
+            for (int i = 0; i < points; i++) {
+                if (list.size() >= maxPerZone) break;
+
+                Location loc = randomLocationInZone(zones.getConfigurationSection(zoneName));
+                if (loc == null) continue;
+
+                int burstMin = getConfig().getInt("firework.burst-min", 1);
+                int burstMax = getConfig().getInt("firework.burst-max", 2);
                 int burst = random.nextInt(burstMax - burstMin + 1) + burstMin;
 
-                for (int j = 0; j < burst; j++) {
-                    Location offset = baseLoc.clone().add(
-                            random.nextDouble() * 2 - 1,
-                            0,
-                            random.nextDouble() * 2 - 1
-                    );
+                for (int b = 0; b < burst && list.size() < maxPerZone; b++) {
+                    Firework fw = spawnFirework(loc);
+                    list.add(fw);
 
-                    spawnFirework(offset);
+                    // авто-удаление
+                    Bukkit.getScheduler().runTaskLater(this, () -> {
+                        if (fw.isValid()) fw.remove();
+                    }, lifeTime);
                 }
             }
         }
     }
 
-    private Location findSafeGroundLocation(ConfigurationSection zone) {
+    private Location randomLocationInZone(ConfigurationSection zone) {
+        if (zone == null) return null;
+
         World world = Bukkit.getWorld(zone.getString("world"));
         if (world == null) return null;
 
@@ -68,30 +84,15 @@ public class AutoFireworkRegions extends JavaPlugin {
         int maxX = zone.getInt("max.x");
         int maxZ = zone.getInt("max.z");
 
-        for (int i = 0; i < 25; i++) {
-            int x = random.nextInt(maxX - minX + 1) + minX;
-            int z = random.nextInt(maxZ - minZ + 1) + minZ;
+        int x = random.nextInt(maxX - minX + 1) + minX;
+        int z = random.nextInt(maxZ - minZ + 1) + minZ;
 
-            Block ground = world.getHighestBlockAt(x, z);
-            if (ground.getType().isAir()) continue;
+        int y = world.getHighestBlockYAt(x, z) + 1;
 
-            boolean clear = true;
-            for (int y = 1; y <= 6; y++) {
-                if (!ground.getRelative(0, y, 0).getType().isAir()) {
-                    clear = false;
-                    break;
-                }
-            }
-
-            if (!clear) continue;
-
-            return ground.getLocation().add(0.5, 1.0, 0.5);
-        }
-
-        return null;
+        return new Location(world, x + 0.5, y, z + 0.5);
     }
 
-    private void spawnFirework(Location loc) {
+    private Firework spawnFirework(Location loc) {
         Firework fw = loc.getWorld().spawn(loc, Firework.class);
         FireworkMeta meta = fw.getFireworkMeta();
 
@@ -101,27 +102,22 @@ public class AutoFireworkRegions extends JavaPlugin {
                 colors.add((Color) Color.class.getField(s).get(null));
             } catch (Exception ignored) {}
         }
+
         if (colors.isEmpty()) colors.add(Color.WHITE);
 
-        FireworkEffect.Type[] types = {
-                FireworkEffect.Type.BALL,
-                FireworkEffect.Type.BALL_LARGE,
-                FireworkEffect.Type.BURST,
-                FireworkEffect.Type.STAR,
-                FireworkEffect.Type.CREEPER
-        };
-
         FireworkEffect effect = FireworkEffect.builder()
-                .with(types[random.nextInt(types.length)])
+                .with(FireworkEffect.Type.values()[random.nextInt(FireworkEffect.Type.values().length)])
                 .withColor(colors)
                 .withFade(colors)
-                .flicker(true)
                 .trail(true)
+                .flicker(true)
                 .build();
 
         meta.clearEffects();
         meta.addEffect(effect);
         meta.setPower(getConfig().getInt("firework.power", 3));
         fw.setFireworkMeta(meta);
+
+        return fw;
     }
 }
