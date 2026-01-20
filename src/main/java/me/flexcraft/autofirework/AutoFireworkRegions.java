@@ -21,24 +21,15 @@ public class AutoFireworkRegions extends JavaPlugin {
 
         int interval = Math.max(1, getConfig().getInt("interval-seconds", 2));
 
-        // ОСНОВНОЙ ТИК ШОУ
         new BukkitRunnable() {
             @Override
             public void run() {
-                runShow(false);
+                spawnShow();
             }
-        }.runTaskTimer(this, 20L, interval * 20L);
-
-        // МИКРОВОЛНЫ (частые, слабые)
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                runShow(true);
-            }
-        }.runTaskTimer(this, 40L, 40L); // каждые 2 секунды
+        }.runTaskTimer(this, 40L, interval * 20L);
     }
 
-    private void runShow(boolean micro) {
+    private void spawnShow() {
         ConfigurationSection zones = getConfig().getConfigurationSection("zones");
         if (zones == null) return;
 
@@ -49,36 +40,29 @@ public class AutoFireworkRegions extends JavaPlugin {
             World world = Bukkit.getWorld(zone.getString("world"));
             if (world == null) continue;
 
-            // ✅ ЕСЛИ НЕТ ИГРОКОВ В ЗОНЕ — НИЧЕГО НЕ ДЕЛАЕМ
-            if (!isAnyPlayerInZone(world, zone)) continue;
+            // ❗ КЛЮЧЕВОЕ: если в зоне нет игроков — НИЧЕГО НЕ ДЕЛАЕМ
+            if (!hasPlayerInside(world, zone)) continue;
 
-            int locations = micro
-                    ? 1
-                    : Math.max(1, getConfig().getInt("firework.locations-per-interval", 3));
+            int locations = Math.max(1,
+                    getConfig().getInt("firework.locations-per-interval", 3));
 
             for (int i = 0; i < locations; i++) {
-                Location loc = findSafeGroundLocation(zone, world);
+                Location loc = findGroundLocation(world, zone);
                 if (loc == null) continue;
 
                 int minBurst = getConfig().getInt("firework.burst-min", 3);
                 int maxBurst = getConfig().getInt("firework.burst-max", 8);
-
-                if (micro) {
-                    minBurst = 2;
-                    maxBurst = 4;
-                }
-
                 int burst = random.nextInt(maxBurst - minBurst + 1) + minBurst;
 
                 for (int b = 0; b < burst; b++) {
-                    spawnFirework(loc.clone().add(0, 0.3, 0));
+                    spawnFirework(loc.clone().add(0, 0.2, 0));
                 }
             }
         }
     }
 
-    // 🔍 ПРОВЕРКА: есть ли игрок в зоне
-    private boolean isAnyPlayerInZone(World world, ConfigurationSection zone) {
+    // 🔍 ПРОВЕРКА ИГРОКА В ЗОНЕ
+    private boolean hasPlayerInside(World world, ConfigurationSection zone) {
         int minX = zone.getInt("min.x");
         int minY = zone.getInt("min.y");
         int minZ = zone.getInt("min.z");
@@ -97,14 +81,14 @@ public class AutoFireworkRegions extends JavaPlugin {
         return false;
     }
 
-    // 🌍 НАХОДИМ ЗЕМЛЮ + ПРОВЕРКА ЧИСТОГО НЕБА
-    private Location findSafeGroundLocation(ConfigurationSection zone, World world) {
+    // 🌍 ВСЕГДА С ЗЕМЛИ + ПРОВЕРКА НЕБА
+    private Location findGroundLocation(World world, ConfigurationSection zone) {
         int minX = zone.getInt("min.x");
         int minZ = zone.getInt("min.z");
         int maxX = zone.getInt("max.x");
         int maxZ = zone.getInt("max.z");
 
-        for (int attempts = 0; attempts < 20; attempts++) {
+        for (int attempt = 0; attempt < 30; attempt++) {
             int x = random.nextInt(maxX - minX + 1) + minX;
             int z = random.nextInt(maxZ - minZ + 1) + minZ;
 
@@ -113,31 +97,31 @@ public class AutoFireworkRegions extends JavaPlugin {
 
             if (!ground.getType().isSolid()) continue;
 
-            // проверяем 6 блоков вверх — должно быть пусто
-            boolean clear = true;
-            for (int i = 0; i < 6; i++) {
+            // Проверка свободного неба
+            boolean free = true;
+            for (int i = 0; i < 7; i++) {
                 if (!world.getBlockAt(x, y + i, z).getType().isAir()) {
-                    clear = false;
+                    free = false;
                     break;
                 }
             }
 
-            if (!clear) continue;
+            if (!free) continue;
 
             return new Location(world, x + 0.5, y, z + 0.5);
         }
         return null;
     }
 
-    // 🎆 СОЗДАНИЕ ФЕЙЕРВЕРКА
+    // 🎆 ФЕЙЕРВЕРК
     private void spawnFirework(Location loc) {
         Firework fw = loc.getWorld().spawn(loc, Firework.class);
         FireworkMeta meta = fw.getFireworkMeta();
 
         List<Color> colors = new ArrayList<>();
-        for (String s : getConfig().getStringList("firework.colors")) {
+        for (String c : getConfig().getStringList("firework.colors")) {
             try {
-                colors.add((Color) Color.class.getField(s).get(null));
+                colors.add((Color) Color.class.getField(c).get(null));
             } catch (Exception ignored) {}
         }
         if (colors.isEmpty()) colors.add(Color.WHITE);
@@ -145,8 +129,8 @@ public class AutoFireworkRegions extends JavaPlugin {
         FireworkEffect.Type[] types = {
                 FireworkEffect.Type.BALL,
                 FireworkEffect.Type.BALL_LARGE,
-                FireworkEffect.Type.STAR,
-                FireworkEffect.Type.BURST
+                FireworkEffect.Type.BURST,
+                FireworkEffect.Type.STAR
         };
 
         FireworkEffect effect = FireworkEffect.builder()
