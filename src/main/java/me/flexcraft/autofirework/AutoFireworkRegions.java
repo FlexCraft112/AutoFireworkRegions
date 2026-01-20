@@ -18,20 +18,20 @@ public class AutoFireworkRegions extends JavaPlugin {
     public void onEnable() {
         saveDefaultConfig();
 
-        int interval = getConfig().getInt("interval-seconds", 2);
+        int interval = Math.max(1, getConfig().getInt("interval-seconds", 1));
 
         new BukkitRunnable() {
             @Override
             public void run() {
-                runFireworkShow();
+                runShow();
             }
-        }.runTaskTimer(this, 40L, interval * 20L);
+        }.runTaskTimer(this, 20L, interval * 20L);
     }
 
     // --------------------------------------------------
-    // MAIN SHOW LOGIC
+    // MAIN LOGIC
     // --------------------------------------------------
-    private void runFireworkShow() {
+    private void runShow() {
         ConfigurationSection zones = getConfig().getConfigurationSection("zones");
         if (zones == null) return;
 
@@ -42,25 +42,31 @@ public class AutoFireworkRegions extends JavaPlugin {
             World world = Bukkit.getWorld(zone.getString("world"));
             if (world == null) continue;
 
-            List<Player> players = getPlayersInZone(world, zone);
-            if (players.isEmpty()) continue; // НЕТ игроков — НЕТ шоу
+            List<Player> players = playersInZone(world, zone);
+            if (players.isEmpty()) continue; // нет игроков — нет шоу
 
-            int locations = getConfig().getInt("firework.locations-per-interval", 3);
-            locations = Math.min(locations + players.size(), 8);
+            int baseLocations = getConfig().getInt("firework.locations-per-interval", 3);
+            int locations = Math.min(baseLocations + players.size() * 2, 12);
 
             for (int i = 0; i < locations; i++) {
-                Location loc = findSafeGroundLocation(world, zone);
-                if (loc == null) continue;
+                Location base = findGround(world, zone);
+                if (base == null) continue;
 
                 int min = getConfig().getInt("firework.burst-min", 5);
                 int max = getConfig().getInt("firework.burst-max", 15);
                 int burst = min + random.nextInt(max - min + 1);
 
                 for (int b = 0; b < burst; b++) {
+                    Location launch = base.clone().add(
+                            random.nextDouble() * 4 - 2,
+                            0,
+                            random.nextDouble() * 4 - 2
+                    );
+
                     Bukkit.getScheduler().runTaskLater(
                             this,
-                            () -> spawnUltraFirework(loc),
-                            random.nextInt(10)
+                            () -> spawnSkyFirework(launch),
+                            random.nextInt(8)
                     );
                 }
             }
@@ -68,17 +74,17 @@ public class AutoFireworkRegions extends JavaPlugin {
     }
 
     // --------------------------------------------------
-    // PLAYERS IN ZONE
+    // PLAYERS CHECK
     // --------------------------------------------------
-    private List<Player> getPlayersInZone(World world, ConfigurationSection zone) {
+    private List<Player> playersInZone(World world, ConfigurationSection z) {
         List<Player> list = new ArrayList<>();
 
-        int minX = zone.getInt("min.x");
-        int minY = zone.getInt("min.y");
-        int minZ = zone.getInt("min.z");
-        int maxX = zone.getInt("max.x");
-        int maxY = zone.getInt("max.y");
-        int maxZ = zone.getInt("max.z");
+        int minX = z.getInt("min.x");
+        int minY = z.getInt("min.y");
+        int minZ = z.getInt("min.z");
+        int maxX = z.getInt("max.x");
+        int maxY = z.getInt("max.y");
+        int maxZ = z.getInt("max.z");
 
         for (Player p : world.getPlayers()) {
             Location l = p.getLocation();
@@ -92,34 +98,34 @@ public class AutoFireworkRegions extends JavaPlugin {
     }
 
     // --------------------------------------------------
-    // SAFE GROUND LOCATION
+    // SAFE GROUND FINDER
     // --------------------------------------------------
-    private Location findSafeGroundLocation(World world, ConfigurationSection zone) {
-        int minX = zone.getInt("min.x");
-        int minZ = zone.getInt("min.z");
-        int maxX = zone.getInt("max.x");
-        int maxZ = zone.getInt("max.z");
+    private Location findGround(World world, ConfigurationSection z) {
+        int minX = z.getInt("min.x");
+        int minZ = z.getInt("min.z");
+        int maxX = z.getInt("max.x");
+        int maxZ = z.getInt("max.z");
 
-        for (int tries = 0; tries < 25; tries++) {
+        for (int i = 0; i < 30; i++) {
             int x = random.nextInt(maxX - minX + 1) + minX;
-            int z = random.nextInt(maxZ - minZ + 1) + minZ;
+            int zed = random.nextInt(maxZ - minZ + 1) + minZ;
 
-            int y = world.getHighestBlockYAt(x, z);
-            Location base = new Location(world, x + 0.5, y + 1, z + 0.5);
+            int y = world.getHighestBlockYAt(x, zed);
+            Location loc = new Location(world, x + 0.5, y + 1, zed + 0.5);
 
-            if (!world.getBlockAt(base).isEmpty()) continue;
-            if (!world.getBlockAt(base.clone().add(0, 1, 0)).isEmpty()) continue;
-            if (!world.getBlockAt(base.clone().add(0, 2, 0)).isEmpty()) continue;
-
-            return base;
+            if (world.getBlockAt(loc).isEmpty()
+                    && world.getBlockAt(loc.clone().add(0, 1, 0)).isEmpty()
+                    && world.getBlockAt(loc.clone().add(0, 2, 0)).isEmpty()) {
+                return loc;
+            }
         }
         return null;
     }
 
     // --------------------------------------------------
-    // ULTRA FIREWORK
+    // ULTRA SKY FIREWORK
     // --------------------------------------------------
-    private void spawnUltraFirework(Location loc) {
+    private void spawnSkyFirework(Location loc) {
         Firework fw = loc.getWorld().spawn(loc, Firework.class);
         FireworkMeta meta = fw.getFireworkMeta();
 
@@ -130,7 +136,8 @@ public class AutoFireworkRegions extends JavaPlugin {
             } catch (Exception ignored) {}
         }
         if (colors.size() < 2) {
-            colors.add(Color.WHITE);
+            colors.add(Color.RED);
+            colors.add(Color.AQUA);
             colors.add(Color.YELLOW);
         }
 
@@ -143,9 +150,9 @@ public class AutoFireworkRegions extends JavaPlugin {
 
         meta.clearEffects();
 
-        int effects = 3 + random.nextInt(4); // 3–6 эффектов
+        int effectCount = 4 + random.nextInt(5); // 4–8 эффектов
 
-        for (int i = 0; i < effects; i++) {
+        for (int i = 0; i < effectCount; i++) {
             Collections.shuffle(colors);
 
             FireworkEffect effect = FireworkEffect.builder()
