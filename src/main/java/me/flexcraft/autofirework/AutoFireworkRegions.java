@@ -18,7 +18,7 @@ public class AutoFireworkRegions extends JavaPlugin {
     public void onEnable() {
         saveDefaultConfig();
 
-        int interval = getConfig().getInt("interval-seconds", 10);
+        int interval = getConfig().getInt("interval-seconds", 1);
 
         new BukkitRunnable() {
             @Override
@@ -32,25 +32,34 @@ public class AutoFireworkRegions extends JavaPlugin {
         ConfigurationSection zones = getConfig().getConfigurationSection("zones");
         if (zones == null) return;
 
+        int locationsPerInterval = getConfig().getInt("firework.locations-per-interval", 3);
+        int burstMin = getConfig().getInt("firework.burst-min", 5);
+        int burstMax = getConfig().getInt("firework.burst-max", 15);
+
         for (String zoneName : zones.getKeys(false)) {
             ConfigurationSection zone = zones.getConfigurationSection(zoneName);
-            Location loc = findSafeGroundLocation(zone);
-            if (loc != null) {
-                spawnFirework(loc);
+            if (zone == null) continue;
+
+            for (int i = 0; i < locationsPerInterval; i++) {
+                Location baseLoc = findSafeGroundLocation(zone);
+                if (baseLoc == null) continue;
+
+                int burst = random.nextInt(burstMax - burstMin + 1) + burstMin;
+
+                for (int j = 0; j < burst; j++) {
+                    Location offset = baseLoc.clone().add(
+                            random.nextDouble() * 2 - 1,
+                            0,
+                            random.nextDouble() * 2 - 1
+                    );
+
+                    spawnFirework(offset);
+                }
             }
         }
     }
 
-    /**
-     * Ищет безопасную точку:
-     * - от земли
-     * - не под постройками
-     * - не внутри гор
-     * - с открытым небом
-     */
     private Location findSafeGroundLocation(ConfigurationSection zone) {
-        if (zone == null) return null;
-
         World world = Bukkit.getWorld(zone.getString("world"));
         if (world == null) return null;
 
@@ -59,26 +68,22 @@ public class AutoFireworkRegions extends JavaPlugin {
         int maxX = zone.getInt("max.x");
         int maxZ = zone.getInt("max.z");
 
-        // до 20 попыток найти нормальную точку
-        for (int i = 0; i < 20; i++) {
-
+        for (int i = 0; i < 25; i++) {
             int x = random.nextInt(maxX - minX + 1) + minX;
             int z = random.nextInt(maxZ - minZ + 1) + minZ;
 
             Block ground = world.getHighestBlockAt(x, z);
-
             if (ground.getType().isAir()) continue;
 
-            // проверяем, что НАД точкой свободно (горы / арки / дома)
-            boolean free = true;
-            for (int y = 1; y <= 5; y++) {
+            boolean clear = true;
+            for (int y = 1; y <= 6; y++) {
                 if (!ground.getRelative(0, y, 0).getType().isAir()) {
-                    free = false;
+                    clear = false;
                     break;
                 }
             }
 
-            if (!free) continue;
+            if (!clear) continue;
 
             return ground.getLocation().add(0.5, 1.0, 0.5);
         }
@@ -96,7 +101,6 @@ public class AutoFireworkRegions extends JavaPlugin {
                 colors.add((Color) Color.class.getField(s).get(null));
             } catch (Exception ignored) {}
         }
-
         if (colors.isEmpty()) colors.add(Color.WHITE);
 
         FireworkEffect.Type[] types = {
@@ -117,7 +121,7 @@ public class AutoFireworkRegions extends JavaPlugin {
 
         meta.clearEffects();
         meta.addEffect(effect);
-        meta.setPower(getConfig().getInt("firework.power", 4));
+        meta.setPower(getConfig().getInt("firework.power", 3));
         fw.setFireworkMeta(meta);
     }
 }
