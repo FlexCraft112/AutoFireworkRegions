@@ -4,22 +4,30 @@
 # Discord: https://discord.gg/KSdY9z4Fb9
 # =====================================================
 
-interval-seconds: 10
+interval-seconds: 1
 
 zones:
   spawn:
-    world: world
+    world: spawn
     min:
-      x: -692
-      y: 65
-      z: -1187
+      x: -171
+      y: -30
+      z: -293
     max:
-      x: -522
-      y: 90
-      z: -1057
+      x: 355
+      y: 318
+      z: 473
 
 firework:
-  power: 2
+  power: 3
+
+  # СКОЛЬКО ФЕЙЕРВЕРКОВ ЗА ОДИН ЗАПУСК
+  burst-min: 5
+  burst-max: 15
+
+  # СКОЛЬКО ТОЧЕК ЗА ИНТЕРВАЛ
+  locations-per-interval: 3
+
   colors:
     - RED
     - BLUE
@@ -28,3 +36,4 @@ firework:
     - LIME
     - ORANGE
     - YELLOW
+
